@@ -1,0 +1,94 @@
+---
+title: "Week 4 Prediction Assignment"
+author: "Anna"
+date: "October 8, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load packages and import data
+The model was built in R - prompt is in the ReadMe file
+
+```{r}
+# Load libaries
+library(caret)
+library(rpart)
+library(randomForest)
+
+# Import data
+raw.train <- read.csv("pml-training.csv")
+raw.test <- read.csv("pml-testing.csv")
+```
+
+## Cross validation
+Cross validation was used by creating a training dataset that contained 60% of the raw data, and a testing dataset that contained the remaining 40% of the data
+```{r}
+# Create training and testing dataset (from training data)
+set.seed(333)
+inTrain = createDataPartition(raw.train$classe, p = 0.6, list=F)
+training = raw.train[ inTrain,]
+testing = raw.train[-inTrain,]
+
+dim(training)
+dim(testing)
+
+## Clean data
+
+# Remove first column 
+cleantrain1 <- training[c(-1)]
+dim(cleantrain1)
+
+# Remove columns with many NAs
+cleantrain2 <- cleantrain1[ lapply( cleantrain1, function(x) sum(is.na(x)) / length(x) ) < 0.6 ]
+dim(cleantrain2)
+# Remove columns that have one unique value (i.e. are zero variance predictors) or predictors that 
+# have both of the following characteristics: they have very few unique values relative to the number of samples 
+# and the ratio of the frequency of the most common value to the frequency of the second most common value is large. 
+
+NZVars <- nearZeroVar(cleantrain2, saveMetrics=TRUE)
+NZVarnames <- rownames(NZVars[which(NZVars$nzv == 'TRUE'),][,0])
+cleantrain3 <- cleantrain2[,!colnames(cleantrain2) %in% NZVarnames]
+dim(cleantrain3)
+names(cleantrain3)
+
+# Remove some hand-picked columns that arguably aren't needed
+rem <- c('user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window')
+cleantrain4 <- cleantrain3[, !colnames(cleantrain3) %in% rem]
+dim(cleantrain4)
+
+cleantraining <- training[colnames(cleantrain4)]
+cleantesting <- testing[colnames(cleantrain4)]
+dim(cleantraining)
+dim(cleantesting)
+```
+
+## Prediction with Random Forest
+```{r}
+mod <- randomForest(classe ~ . , data=cleantraining)
+print(mod)
+
+# Cross validate against testing data
+predict <- predict(mod, cleantesting, type = "class")
+confusionMatrix(predict, cleantesting$classe)
+```
+
+## Predict for 20 observations in raw test data
+```{r}
+clean20 <- raw.test[c(-1)]
+clean20 <- clean20[,colnames(cleantesting[,-53])] #last column (classe) doesn't exist in raw.test
+
+test20 <- predict(mod,clean20[,1:52])
+test20$classe <- predict(mod,test20)
+test20$classe
+```
+
+## Conclusion, Expected out of sample error, Why Random Forest
+The expected out of sample (original testing data set) error is 1-accuracy, as the dependent variable 'classe' is an unordered factor variable and accuracy is the proportion of correct classified observation over the total sample in the subTesting data set.
+
+Random Forest was used for a number of reasons, including efficient run time on large datasets, can handle a large number of variables without variable deletion, gives estimates on what variables are important in classification, is an effective method for estimating missing data and maintains accuracy when a large proportion of the data are missing, and has methods for balancing error in class population unbalanced data sets
+
+The random forest model created here has an accuracy of ~99% and overall sensitivity of at least 98.7% and specificity of at least 99.7%
+
